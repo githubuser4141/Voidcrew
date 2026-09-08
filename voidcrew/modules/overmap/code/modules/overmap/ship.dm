@@ -90,6 +90,8 @@
 	COOLDOWN_DECLARE(rename_cooldown)
 	///Cooldown between sending crew invites
 	COOLDOWN_DECLARE(invite_cooldown)
+	///Cooldown between lobby requests to open a job slot, shared by all requesters.
+	COOLDOWN_DECLARE(join_ping_cooldown)
 	///List of pending crew invites: ckey -> invite_time
 	var/list/pending_invites = list()
 	///Open /datum/ship_application requests to join this ship from the lobby. Only a

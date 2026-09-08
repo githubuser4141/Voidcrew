@@ -49,12 +49,28 @@
 
 /// Marks the request finished. Providers call one of these two from poll().
 /datum/translation_request/proc/succeed(translated_text)
+	// A translation must not attribute this English slur to a player. Keep the
+	// original visible instead, even when the source itself contains abuse.
+	// Validate here so every backend is checked before caching or either display.
+	if(!autotranslate_output_acceptable(translated_text, target_language))
+		fail("translation output rejected")
+		return
 	result = translated_text
 	errored = FALSE
 
 /datum/translation_request/proc/fail(reason)
+	result = null
 	errored = TRUE
 	error_reason = reason
+
+/// Narrow guard for the observed RU->EN racial-slur mistranslation, not a quality score.
+/proc/autotranslate_output_acceptable(text, target_language)
+	if(!istext(text) || !length(trim(html_decode(text))))
+		return FALSE
+	if(target_language != AUTOTRANSLATE_LANG_EN)
+		return TRUE
+	var/static/regex/racial_slur = regex(@"\bnigg(?:er|a)s?\b", "i")
+	return !racial_slur.Find(html_decode(text))
 
 
 /**

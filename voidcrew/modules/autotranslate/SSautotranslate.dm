@@ -83,6 +83,7 @@ SUBSYSTEM_DEF(autotranslate)
 	active_requests.Cut()
 	requests_by_key.Cut()
 	provider = new_provider
+	clear_cache()
 	log_world("SSautotranslate: provider set to [new_provider.name]")
 	return TRUE
 

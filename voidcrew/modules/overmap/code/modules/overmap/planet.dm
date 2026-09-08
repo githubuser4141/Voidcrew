@@ -1301,7 +1301,7 @@ GLOBAL_LIST_EMPTY(planet_ruin_area_instancing)
  * and again once the claim comes back. Waiting in that queue takes real time, and a
  * planet that was empty when it got in line need not still be empty at the front of it.
  */
-/obj/structure/overmap/planet/proc/can_release_interior()
+/obj/structure/overmap/planet/proc/can_release_interior(ignore_ssd_grace = FALSE)
 	if(preserve_level || !mapzone)
 		return FALSE
 
@@ -1319,13 +1319,21 @@ GLOBAL_LIST_EMPTY(planet_ruin_area_instancing)
 	for(var/obj/structure/overmap/ship/docked_ship in contents)
 		return FALSE
 
-	// Footprint-scoped, not z-scoped: on a shared level the z-wide answer counts the
-	// NEIGHBOUR's crew, which fuses the two tenants' lifecycles - neither ever recycles
-	// until both are empty. Falls back to the z-wide answer when there is no footprint.
-	if(length(mapzone.get_mind_mobs_in(footprint)))
-		return FALSE //Dont fuck over stranded people? tbh this shouldn't be called on this condition, instead of bandaiding it inside
+	// Protect connected survivors, including those inside containers, within our own
+	// footprint. A retained mind alone must not keep an abandoned planet loaded forever.
+	if(mapzone.has_living_players_in(footprint))
+		return FALSE
+
+	// Countdown setup accounts for this grace in its delay. Actual teardown checks it
+	// again, including after the worldgen queue, in case someone just disconnected.
+	if(!ignore_ssd_grace && mapzone.get_ssd_grace_remaining_in(footprint, PLANET_SSD_GRACE_PERIOD))
+		return FALSE
 
 	return TRUE
+
+/// Catatonic/empty sites use the base delay; SSD bodies can extend it until their grace expires.
+/obj/structure/overmap/planet/proc/get_despawn_delay()
+	return max(PLANET_DESPAWN_TIMER, mapzone?.get_ssd_grace_remaining_in(footprint, PLANET_SSD_GRACE_PERIOD))
 
 /**
   * Unloads the reserve, deletes the linked docking port, and moves to a random location if there's no client-having, alive mobs.
@@ -1359,7 +1367,7 @@ GLOBAL_LIST_EMPTY(planet_ruin_area_instancing)
 		// roundend.
 		if(!SSovermap.worldgen_claim(src, "planet teardown ([display_name || name])"))
 			worldgen_end(teardown_probe, "queue-timeout")
-			addtimer(CALLBACK(src, PROC_REF(attempt_despawn)), 30 SECONDS, TIMER_UNIQUE)
+			addtimer(CALLBACK(src, PROC_REF(check_start_despawn)), 30 SECONDS, TIMER_UNIQUE)
 			return
 
 		unloading = TRUE
@@ -1456,11 +1464,8 @@ GLOBAL_LIST_EMPTY(planet_ruin_area_instancing)
 
 /// Starts the countdown, if the planet really is empty.
 ///
-/// Our only caller is on_ship_undocked()'s one-shot 3-second timer, so a refusal here
-/// used to end the planet's lifecycle for good: one crewmate left behind, one ghost role,
-/// one mission mob with a mind still on the surface at T+3s and the z-level stayed
-/// resident for the rest of the round unless another ship happened to dock and leave
-/// again. Re-arm instead, the same way check_and_respawn() and the field teardown do.
+/// Keep checking after a refusal: a stranded player may leave or ghost later, without
+/// another ship visiting to trigger a new undock check.
 /obj/structure/overmap/planet/proc/check_start_despawn()
 	// Terminal: a preserved level never releases, and one with no mapzone is already
 	// unloaded - there is nothing left to count down to. Everything else is a "not yet".
@@ -1470,13 +1475,12 @@ GLOBAL_LIST_EMPTY(planet_ruin_area_instancing)
 	if(despawn_timer_id)
 		return
 	// A teardown already in flight, or loading, either berth, a ship still inside,
-	// anyone with a mind on the surface. Deliberately the same test unload_level() will
-	// apply in five minutes. An in-flight teardown can still abort (see unload_level's
-	// post-claim re-check), so it retries rather than ending here.
-	if(unloading || !can_release_interior())
+	// any living, connected player on the surface. SSD protection is included in the
+	// countdown instead of delaying its start, so the two grace periods do not stack.
+	if(unloading || !can_release_interior(ignore_ssd_grace = TRUE))
 		addtimer(CALLBACK(src, PROC_REF(check_start_despawn)), 30 SECONDS, TIMER_UNIQUE)
 		return
-	despawn_timer_id = addtimer(CALLBACK(src, PROC_REF(attempt_despawn)), PLANET_DESPAWN_TIMER, TIMER_STOPPABLE)
+	despawn_timer_id = addtimer(CALLBACK(src, PROC_REF(attempt_despawn)), get_despawn_delay(), TIMER_STOPPABLE)
 
 /obj/structure/overmap/planet/proc/cancel_despawn_timer()
 	if(!despawn_timer_id)
@@ -1488,13 +1492,11 @@ GLOBAL_LIST_EMPTY(planet_ruin_area_instancing)
 /obj/structure/overmap/planet/proc/attempt_despawn()
 	despawn_timer_id = null
 	if(!unload_level())
-		// The countdown that got us here is spent, so a refusal at this exact instant
-		// (someone came back, a build is in flight, the queue timed out) would otherwise
-		// leave the level resident until the next visitor undocks. preserve_level and an
-		// already-unloaded planet never release and must not spin. TIMER_UNIQUE dedupes
-		// against unload_level()'s own queue-timeout re-arm - it is this same callback.
+		// Recheck eligibility and grant a fresh countdown after a refusal. A player who
+		// reconnects must not leave the planet on a 30-second deletion retry when they
+		// disconnect again. Deduplicates with unload_level()'s queue-timeout retry.
 		if(!preserve_level && mapzone)
-			addtimer(CALLBACK(src, PROC_REF(attempt_despawn)), 30 SECONDS, TIMER_UNIQUE)
+			addtimer(CALLBACK(src, PROC_REF(check_start_despawn)), 30 SECONDS, TIMER_UNIQUE)
 		return
 	log_mapping("SSovermap: Planet '[name]' unloaded after being abandoned, relocated to ([x], [y])")
 

@@ -1,0 +1,32 @@
+/// A translated line must not invent an English racial slur, in either display.
+/datum/unit_test/voidcrew_autotranslate_output/Run()
+	// This is the exact source and model output from the reported incident.
+	var/datum/translation_request/request = new("test", "а ведь был негром", "ru", "en")
+	request.succeed("he was a nigger")
+	TEST_ASSERT(request.errored, "The reported invented slur was accepted")
+	TEST_ASSERT_NULL(request.result, "Rejected output remained available to the cache or listeners")
+	TEST_ASSERT_EQUAL(request.source_text, "а ведь был негром", "Rejecting a translation changed the original speech")
+
+	request.succeed("He used to be Black.")
+	TEST_ASSERT(!request.errored, "An ordinary translation was rejected")
+	TEST_ASSERT_EQUAL(request.result, "He used to be Black.", "An ordinary translation was changed")
+	request.succeed("a NIGGER&#39;s words")
+	TEST_ASSERT(request.errored, "Capitalization or HTML encoding bypassed rejection")
+	TEST_ASSERT_NULL(request.result, "A failed retry retained an earlier successful result")
+	request.succeed("ni&#103;ger")
+	TEST_ASSERT(request.errored, "An encoded slur reached the display")
+	request.succeed("niggas")
+	TEST_ASSERT(request.errored, "The plural variant was accepted")
+	request.succeed("snigger, bigger, Nigeria")
+	TEST_ASSERT(!request.errored, "Unrelated words were rejected by a substring match")
+	request.succeed("   ")
+	TEST_ASSERT(request.errored, "Whitespace-only output was accepted")
+	qdel(request)
+
+// Original abusive speech is preserved, too: rejected translations do not redact it.
+/datum/unit_test/voidcrew_autotranslate_output_original/Run()
+	var/datum/translation_request/request = new("test", "ниггер", "ru", "en")
+	request.succeed("nigger")
+	TEST_ASSERT(request.errored, "An unsafe translation should fall back to original speech")
+	TEST_ASSERT_EQUAL(request.source_text, "ниггер", "Original evidence was censored")
+	qdel(request)
