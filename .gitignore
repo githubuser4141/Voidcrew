@@ -275,3 +275,4 @@ wiki/dist/
 
 # Local-only notes (machine-specific infrastructure, never commit)
 *.local.md
+config/admins.txt
