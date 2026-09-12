@@ -339,6 +339,7 @@
 #include "voidcrew_construction_refunds.dm"
 #include "voidcrew_construction_automation.dm"
 #include "voidcrew_repair_robotics.dm"
+#include "..\..\..\voidcrew\modules\remote_mech_piloting\remote_mech_piloting_test.dm"
 #include "voidcrew_cordon_teleport.dm"
 #include "voidcrew_crew_antag_gc.dm"
 #include "voidcrew_crew_hud.dm"

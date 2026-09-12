@@ -66,7 +66,7 @@
 
 /obj/vehicle/sealed/mecha/relaymove(mob/living/user, direction)
 	. = TRUE
-	if(!canmove || !(user in return_drivers()))
+	if(!canmove || (!(user in return_drivers()) && !can_remote_pilot(user)))
 		return
 	if (!vehicle_move(direction))
 		return
@@ -146,7 +146,11 @@
 
 	set_glide_size(DELAY_TO_GLIDE_SIZE(movedelay))
 	//Otherwise just walk normally
+	var/turf/old_turf = get_turf(src)
 	. = try_step_multiz(direction)
+	if(.)
+		for(var/obj/item/mecha_parts/mecha_equipment/remote_cable_reel/reel as anything in flat_equipment)
+			reel.handle_chassis_move(old_turf, direction, olddir)
 
 	if(phasing)
 		use_energy(phasing_energy_drain)
