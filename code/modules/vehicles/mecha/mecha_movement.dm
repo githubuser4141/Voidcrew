@@ -149,7 +149,7 @@
 	var/turf/old_turf = get_turf(src)
 	. = try_step_multiz(direction)
 	if(.)
-		for(var/obj/item/mecha_parts/mecha_equipment/remote_cable_reel/reel as anything in flat_equipment)
+		for(var/obj/item/mecha_parts/mecha_equipment/remote_cable_reel/reel in flat_equipment)
 			reel.handle_chassis_move(old_turf, direction, olddir)
 
 	if(phasing)

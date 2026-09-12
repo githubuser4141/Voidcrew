@@ -97,7 +97,7 @@
 		return reel.install_reclaimer(src, user) ? ITEM_INTERACT_SUCCESS : ITEM_INTERACT_BLOCKING
 	if(istype(interacting_with, /obj/vehicle/sealed/mecha))
 		var/obj/vehicle/sealed/mecha/mech = interacting_with
-		for(var/obj/item/mecha_parts/mecha_equipment/remote_cable_reel/reel as anything in mech.flat_equipment)
+		for(var/obj/item/mecha_parts/mecha_equipment/remote_cable_reel/reel in mech.flat_equipment)
 			return reel.install_reclaimer(src, user) ? ITEM_INTERACT_SUCCESS : ITEM_INTERACT_BLOCKING
 		user.balloon_alert(user, "no cable reel!")
 		return ITEM_INTERACT_BLOCKING
@@ -244,7 +244,7 @@
 	return remote_terminal?.operator == user && remote_terminal.can_control(src)
 
 /obj/vehicle/sealed/mecha/multitool_act(mob/living/user, obj/item/multitool/multitool)
-	for(var/obj/item/mecha_parts/mecha_equipment/remote_control_receiver/receiver as anything in flat_equipment)
+	for(var/obj/item/mecha_parts/mecha_equipment/remote_control_receiver/receiver in flat_equipment)
 		return receiver.multitool_act(user, multitool)
 	return ..()
 
@@ -323,11 +323,11 @@
 		return
 
 /obj/machinery/computer/mecha_remote_piloting/proc/get_cable_reel(obj/vehicle/sealed/mecha/mech)
-	for(var/obj/item/mecha_parts/mecha_equipment/remote_cable_reel/reel as anything in mech.flat_equipment)
+	for(var/obj/item/mecha_parts/mecha_equipment/remote_cable_reel/reel in mech.flat_equipment)
 		return reel
 
 /obj/machinery/computer/mecha_remote_piloting/proc/get_remote_receiver(obj/vehicle/sealed/mecha/mech)
-	for(var/obj/item/mecha_parts/mecha_equipment/remote_control_receiver/receiver as anything in mech.flat_equipment)
+	for(var/obj/item/mecha_parts/mecha_equipment/remote_control_receiver/receiver in mech.flat_equipment)
 		return receiver
 
 /obj/machinery/computer/mecha_remote_piloting/proc/begin_control(obj/vehicle/sealed/mecha/mech, mode, obj/item/mecha_parts/mecha_equipment/remote_cable_reel/reel, obj/machinery/mecha_remote_radio/sender)
