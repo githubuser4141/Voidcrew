@@ -9,6 +9,8 @@
 	obj_flags = CAN_BE_HIT
 	max_integrity = 30
 	var/obj/item/mecha_parts/mecha_equipment/remote_cable_reel/reel
+	/// Set false only when the reel has physically recovered this length.
+	var/drop_cable_coil = TRUE
 
 /obj/structure/mecha_remote_cable/attackby(obj/item/item, mob/user, list/modifiers, list/attack_modifiers)
 	if(item.tool_behaviour == TOOL_WIRECUTTER)
@@ -18,13 +20,20 @@
 	return ..()
 
 /obj/structure/mecha_remote_cable/Destroy()
+	if(drop_cable_coil && get_turf(src))
+		new /obj/item/stack/cable_coil(get_turf(src), 1)
 	reel?.sever_cable(src)
 	reel = null
 	return ..()
 
+/obj/structure/mecha_remote_cable/proc/set_visual_offset(index)
+	// Repeated movements can leave multiple lengths on one turf. Offset them so they remain visible.
+	pixel_x = ((index * 7) % 15) - 7
+	pixel_y = ((index * 11) % 15) - 7
+
 /obj/item/mecha_parts/mecha_equipment/remote_cable_reel
 	name = "mech remote cable reel"
-	desc = "A 30-length reel of armored cable for tethered remote piloting."
+	desc = "A 30-length reel of armored cable for tethered remote piloting. Apply ordinary cable coils to refill it."
 	equipment_slot = MECHA_UTILITY
 	mech_flags = ALL
 	var/max_cable = 30
@@ -42,33 +51,35 @@
 /obj/item/mecha_parts/mecha_equipment/remote_cable_reel/proc/connect_terminal(obj/machinery/computer/mecha_remote_piloting/new_terminal)
 	terminal = new_terminal
 	link_broken = FALSE
+	lay_cable(get_turf(chassis))
+
+/obj/item/mecha_parts/mecha_equipment/remote_cable_reel/proc/lay_cable(turf/cable_turf)
+	if(!cable_turf || cable_remaining <= 0)
+		return FALSE
+	var/obj/structure/mecha_remote_cable/cable = new(cable_turf)
+	cable.reel = src
+	deployed_cables += cable
+	cable.set_visual_offset(length(deployed_cables))
+	cable_remaining--
+	return TRUE
 
 /obj/item/mecha_parts/mecha_equipment/remote_cable_reel/proc/handle_chassis_move(turf/old_turf, direction, facing)
 	if(!terminal || link_broken || !chassis)
 		return
 	if(direction == facing)
-		if(cable_remaining <= 0)
-			return
-		var/obj/structure/mecha_remote_cable/cable = new(old_turf)
-		cable.reel = src
-		deployed_cables += cable
-		cable_remaining--
+		lay_cable(old_turf)
 		return
 	if(direction != REVERSE_DIR(facing))
 		return
 	if(!auto_reel)
-		if(cable_remaining <= 0)
-			return
-		var/obj/structure/mecha_remote_cable/cable = new(old_turf)
-		cable.reel = src
-		deployed_cables += cable
-		cable_remaining--
+		lay_cable(old_turf)
 		return
 	for(var/obj/structure/mecha_remote_cable/cable as anything in deployed_cables.Copy())
 		if(cable.loc != get_turf(chassis))
 			continue
 		deployed_cables -= cable
 		cable.reel = null
+		cable.drop_cable_coil = FALSE
 		qdel(cable)
 		cable_remaining = min(cable_remaining + 1, max_cable)
 		return
@@ -93,9 +104,21 @@
 	return NONE
 
 /obj/item/mecha_parts/mecha_equipment/remote_cable_reel/item_interaction(mob/living/user, obj/item/tool, list/modifiers)
-	if(!istype(tool, /obj/item/mecha_remote_cable_reclaimer))
+	if(istype(tool, /obj/item/mecha_remote_cable_reclaimer))
+		return install_reclaimer(tool, user) ? ITEM_INTERACT_SUCCESS : ITEM_INTERACT_BLOCKING
+	if(!istype(tool, /obj/item/stack/cable_coil))
 		return ..()
-	return install_reclaimer(tool, user) ? ITEM_INTERACT_SUCCESS : ITEM_INTERACT_BLOCKING
+	var/obj/item/stack/cable_coil/coil = tool
+	var/cable_needed = max_cable - cable_remaining
+	if(!cable_needed)
+		user.balloon_alert(user, "reel full!")
+		return ITEM_INTERACT_BLOCKING
+	var/cable_loaded = min(cable_needed, coil.get_amount())
+	if(!coil.use(cable_loaded))
+		return ITEM_INTERACT_BLOCKING
+	cable_remaining += cable_loaded
+	user.balloon_alert(user, "loaded [cable_loaded] length[cable_loaded == 1 ? "" : "s"]")
+	return ITEM_INTERACT_SUCCESS
 
 /obj/item/mecha_parts/mecha_equipment/remote_cable_reel/proc/install_reclaimer(obj/item/mecha_remote_cable_reclaimer/upgrade, mob/living/user)
 	if(auto_reel)
@@ -108,43 +131,83 @@
 
 /obj/item/mecha_parts/mecha_equipment/remote_cable_reel/proc/sever_cable(obj/structure/mecha_remote_cable/cable)
 	deployed_cables -= cable
+	detach_cables()
 	if(!terminal)
 		return
 	link_broken = TRUE
 	terminal.clear_link(TRUE)
 
 /obj/item/mecha_parts/mecha_equipment/remote_cable_reel/Destroy()
-	for(var/obj/structure/mecha_remote_cable/cable as anything in deployed_cables.Copy())
-		cable.reel = null
-		qdel(cable)
-	deployed_cables.Cut()
+	detach_cables()
 	if(terminal?.controlled_mech == chassis)
 		terminal.clear_link(TRUE)
 	terminal = null
 	return ..()
 
+/obj/item/mecha_parts/mecha_equipment/remote_cable_reel/proc/detach_cables()
+	for(var/obj/structure/mecha_remote_cable/cable as anything in deployed_cables.Copy())
+		cable.reel = null
+	deployed_cables.Cut()
+
 /// Both cable and radio links terminate in this receiver. The cable reel only supplies a tether.
 /obj/item/mecha_parts/mecha_equipment/remote_control_receiver
 	name = "mech remote control receiver"
-	desc = "A hardened receiver that lets an exosuit accept remote pilot input."
+	desc = "A hardened receiver that lets an exosuit accept remote pilot input. Link it to a remote radio sender with a multitool."
 	equipment_slot = MECHA_UTILITY
 	mech_flags = ALL
 	unstackable = TRUE
+	var/obj/machinery/mecha_remote_radio/radio_sender
+
+/obj/item/mecha_parts/mecha_equipment/remote_control_receiver/multitool_act(mob/living/user, obj/item/multitool/multitool)
+	if(!istype(multitool.buffer, /obj/machinery/mecha_remote_radio))
+		user.balloon_alert(user, "save a radio sender first!")
+		return ITEM_INTERACT_BLOCKING
+	var/obj/machinery/mecha_remote_radio/sender = multitool.buffer
+	sender.link_receiver(src)
+	multitool.set_buffer(null)
+	user.visible_message(span_notice("[user] links [src] to [sender]."), span_notice("You link [src] to [sender]."))
+	return ITEM_INTERACT_SUCCESS
+
+/obj/item/mecha_parts/mecha_equipment/remote_control_receiver/Destroy()
+	if(radio_sender?.linked_receiver == src)
+		radio_sender.linked_receiver = null
+	radio_sender = null
+	return ..()
 
 /obj/machinery/mecha_remote_radio
 	name = "mech remote radio sender"
-	desc = "A fixed, high-gain transmitter for remote exosuit controls."
+	desc = "A fixed, high-gain transmitter for remote exosuit controls. Save it to a multitool, then link an installed receiver on a mech."
 	icon = 'icons/obj/machines/telecomms.dmi'
 	icon_state = "bus"
 	anchored = TRUE
 	density = TRUE
 	var/active = TRUE
 	var/range = 30
+	var/obj/item/mecha_parts/mecha_equipment/remote_control_receiver/linked_receiver
 
 /obj/machinery/mecha_remote_radio/attack_hand(mob/living/user, list/modifiers)
 	active = !active
 	to_chat(user, span_notice("You [active ? "activate" : "deactivate"] [src]."))
 	return TRUE
+
+/obj/machinery/mecha_remote_radio/multitool_act(mob/living/user, obj/item/multitool/multitool)
+	multitool.set_buffer(src)
+	user.balloon_alert(user, "sender saved")
+	return ITEM_INTERACT_SUCCESS
+
+/obj/machinery/mecha_remote_radio/proc/link_receiver(obj/item/mecha_parts/mecha_equipment/remote_control_receiver/new_receiver)
+	if(linked_receiver && linked_receiver != new_receiver)
+		linked_receiver.radio_sender = null
+	if(new_receiver.radio_sender && new_receiver.radio_sender != src)
+		new_receiver.radio_sender.linked_receiver = null
+	linked_receiver = new_receiver
+	new_receiver.radio_sender = src
+
+/obj/machinery/mecha_remote_radio/Destroy()
+	if(linked_receiver?.radio_sender == src)
+		linked_receiver.radio_sender = null
+	linked_receiver = null
+	return ..()
 
 /obj/machinery/radio_jammer/large
 	name = "large radio jammer"
@@ -179,6 +242,11 @@
 
 /obj/vehicle/sealed/mecha/proc/can_remote_pilot(mob/living/user)
 	return remote_terminal?.operator == user && remote_terminal.can_control(src)
+
+/obj/vehicle/sealed/mecha/multitool_act(mob/living/user, obj/item/multitool/multitool)
+	for(var/obj/item/mecha_parts/mecha_equipment/remote_control_receiver/receiver as anything in flat_equipment)
+		return receiver.multitool_act(user, multitool)
+	return ..()
 
 /obj/machinery/computer/mecha_remote_piloting
 	name = "remote mech piloting terminal"
@@ -231,34 +299,28 @@
 	var/obj/vehicle/sealed/mecha/mech = available_mechs[choice]
 	if(!mech || length(mech.return_occupants()) || mech.remote_terminal)
 		return
+	var/obj/item/mecha_parts/mecha_equipment/remote_control_receiver/receiver = get_remote_receiver(mech)
+	if(!receiver)
+		to_chat(operator, span_warning("That exosuit has no remote control receiver."))
+		return
 	var/mode = tgui_input_list(operator, "Select control link.", name, list("Cable", "Radio"))
 	if(mode == "Cable")
-		if(!get_remote_receiver(mech))
-			to_chat(operator, span_warning("That exosuit has no remote control receiver."))
-			return
 		var/obj/item/mecha_parts/mecha_equipment/remote_cable_reel/reel = get_cable_reel(mech)
 		if(!reel || !Adjacent(mech))
 			to_chat(operator, span_warning("Cable control requires an adjacent mech with a remote cable reel."))
 			return
-		reel.connect_terminal(src)
-		control_mode = "cable"
+		begin_control(mech, "cable", reel)
 	else if(mode == "Radio")
-		if(!get_remote_receiver(mech))
-			to_chat(operator, span_warning("That exosuit has no remote control receiver."))
+		var/obj/machinery/mecha_remote_radio/sender = receiver.radio_sender
+		if(!sender)
+			to_chat(operator, span_warning("That exosuit's receiver is not multitool-linked to a radio sender."))
 			return
-		radio_sender = find_radio_sender()
-		if(!radio_sender || !radio_sender.active || get_dist(radio_sender, mech) > radio_sender.range || radio_sender.z != mech.z)
-			to_chat(operator, span_warning("No active radio sender can reach that exosuit."))
+		if(!Adjacent(sender) || !sender.active || get_dist(sender, mech) > sender.range || sender.z != mech.z)
+			to_chat(operator, span_warning("Radio control requires an adjacent active sender that can reach that exosuit."))
 			return
-		control_mode = "radio"
+		begin_control(mech, "radio", null, sender)
 	else
 		return
-	begin_control(mech)
-
-/obj/machinery/computer/mecha_remote_piloting/proc/find_radio_sender()
-	for(var/obj/machinery/mecha_remote_radio/sender as anything in range(1, src))
-		if(sender.active)
-			return sender
 
 /obj/machinery/computer/mecha_remote_piloting/proc/get_cable_reel(obj/vehicle/sealed/mecha/mech)
 	for(var/obj/item/mecha_parts/mecha_equipment/remote_cable_reel/reel as anything in mech.flat_equipment)
@@ -268,9 +330,13 @@
 	for(var/obj/item/mecha_parts/mecha_equipment/remote_control_receiver/receiver as anything in mech.flat_equipment)
 		return receiver
 
-/obj/machinery/computer/mecha_remote_piloting/proc/begin_control(obj/vehicle/sealed/mecha/mech)
+/obj/machinery/computer/mecha_remote_piloting/proc/begin_control(obj/vehicle/sealed/mecha/mech, mode, obj/item/mecha_parts/mecha_equipment/remote_cable_reel/reel, obj/machinery/mecha_remote_radio/sender)
 	clear_link()
 	controlled_mech = mech
+	control_mode = mode
+	radio_sender = sender
+	if(reel)
+		reel.connect_terminal(src)
 	controlled_mech.remote_terminal = src
 	operator.remote_control = mech
 	operator.click_intercept = src
@@ -282,7 +348,8 @@
 	if(mech != controlled_mech || !operator || operator.buckled != src || length(mech.return_occupants()) || !get_remote_receiver(mech))
 		return FALSE
 	if(control_mode == "radio")
-		return radio_sender?.active && radio_sender.z == mech.z && get_dist(radio_sender, mech) <= radio_sender.range && !is_within_radio_jammer_range(radio_sender) && !is_within_radio_jammer_range(mech)
+		var/obj/item/mecha_parts/mecha_equipment/remote_control_receiver/receiver = get_remote_receiver(mech)
+		return receiver?.radio_sender == radio_sender && Adjacent(radio_sender) && radio_sender.active && radio_sender.z == mech.z && get_dist(radio_sender, mech) <= radio_sender.range && !is_within_radio_jammer_range(radio_sender) && !is_within_radio_jammer_range(mech)
 	if(control_mode == "cable")
 		var/obj/item/mecha_parts/mecha_equipment/remote_cable_reel/reel = get_cable_reel(mech)
 		return reel?.terminal == src && !reel.link_broken

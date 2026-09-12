@@ -12,3 +12,12 @@
 	reel.deployed_cables += cable
 	reel.sever_cable(cable)
 	TEST_ASSERT(reel.link_broken, "Destroying a deployed control cable must sever the link.")
+	var/obj/machinery/mecha_remote_radio/sender = allocate()
+	var/obj/item/mecha_parts/mecha_equipment/remote_control_receiver/receiver = allocate()
+	sender.link_receiver(receiver)
+	TEST_ASSERT_EQUAL(receiver.radio_sender, sender, "A radio receiver must retain its multitool-linked sender.")
+	var/obj/structure/mecha_remote_cable/orphaned_cable = allocate()
+	orphaned_cable.reel = reel
+	reel.deployed_cables += orphaned_cable
+	reel.detach_cables()
+	TEST_ASSERT(!orphaned_cable.reel, "Cable segments must remain behind when their reel is destroyed.")
