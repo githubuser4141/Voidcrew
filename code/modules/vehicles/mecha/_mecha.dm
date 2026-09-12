@@ -665,7 +665,7 @@
 	if(internal_damage & MECHA_INT_CONTROL_LOST)
 		target = pick(view(3,target))
 	var/mob/living/livinguser = user
-	if(!(livinguser in return_controllers_with_flag(VEHICLE_CONTROL_EQUIPMENT)))
+	if(!(livinguser in return_controllers_with_flag(VEHICLE_CONTROL_EQUIPMENT)) && !can_remote_pilot(livinguser))
 		balloon_alert(user, "wrong seat for equipment!")
 		return
 	var/obj/item/mecha_parts/mecha_equipment/selected
@@ -690,7 +690,7 @@
 				return
 			INVOKE_ASYNC(selected, TYPE_PROC_REF(/obj/item/mecha_parts/mecha_equipment, action), user, target, modifiers)
 			return
-	if(!(livinguser in return_controllers_with_flag(VEHICLE_CONTROL_MELEE)))
+	if(!(livinguser in return_controllers_with_flag(VEHICLE_CONTROL_MELEE)) && !can_remote_pilot(livinguser))
 		to_chat(livinguser, span_warning("You're in the wrong seat to interact with your hands."))
 		return
 	var/on_cooldown = TIMER_COOLDOWN_RUNNING(src, COOLDOWN_MECHA_MELEE_ATTACK)
@@ -719,10 +719,10 @@
 	if(target != src)
 		return
 
-	if(!(user in occupants))
+	if(!(user in occupants) && !can_remote_pilot(user))
 		return
 
-	if(!(user in return_controllers_with_flag(VEHICLE_CONTROL_DRIVE)))
+	if(!(user in return_controllers_with_flag(VEHICLE_CONTROL_DRIVE)) && !can_remote_pilot(user))
 		to_chat(user, span_warning("You're in the wrong seat to control movement."))
 		return
 
