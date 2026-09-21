@@ -14,6 +14,7 @@
 		log_combat(user, src, "attacked", mecha_attacker, "(COMBAT MODE: [uppertext(user?.combat_mode)] (DAMTYPE: [uppertext(mecha_attacker.damtype)])")
 	return
 
+// VOIDCREW EDIT START - PR #281: Buffs plasma cutters, increases armor and punch damage of some mechs.
 /turf/closed/wall/mech_melee_attack(obj/vehicle/sealed/mecha/mecha_attacker, mob/living/user)
 	if(!user.combat_mode)
 		return
@@ -35,6 +36,7 @@
 	..()
 	return 100 //this is an arbitrary "damage" number since the actual damage is rng dismantle
 
+// VOIDCREW EDIT END
 /obj/structure/mech_melee_attack(obj/vehicle/sealed/mecha/mecha_attacker, mob/living/user)
 	if(!user.combat_mode)
 		return 0
